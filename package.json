@@ -1,0 +1,16 @@
+{
+  "name": "inkwell",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-hosted handwriting notes: ink on paper and PDFs, folders, tags, search, templates, PDF export",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "node --watch server/src/index.js",
+    "dev:client": "npm run dev --workspace client",
+    "build": "npm run build --workspace client",
+    "start": "node server/src/index.js"
+  }
+}

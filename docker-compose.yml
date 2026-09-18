@@ -1,0 +1,12 @@
+services:
+  inkwell:
+    build: .
+    container_name: inkwell
+    ports:
+      # Reach via <truenas-tailscale-ip>:3100
+      - "3100:3100"
+    environment:
+      - TZ=Europe/Vienna
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
