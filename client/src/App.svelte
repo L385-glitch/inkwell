@@ -3,8 +3,10 @@
   import Sidebar from './components/Sidebar.svelte';
   import Editor from './components/Editor.svelte';
   import NotebookModal from './components/NotebookModal.svelte';
+  import Settings from './components/Settings.svelte';
   import { api } from './lib/api.js';
   import { getPageCount, getPageSize } from './lib/pdf.js';
+  import { initialDark, applyTheme, storeTheme } from './lib/theme.js';
 
   let folders = $state([]);
   let notebooks = $state([]);
@@ -17,9 +19,21 @@
   let modalNotebook = $state(null);
   let sidebarOpen = $state(false);
   let importing = $state(false);
+  let dark = $state(initialDark());
+  let settingsOpen = $state(false);
   let editorApi = $state(null);
   let fileInput;
   let navToken = 0;
+
+  // Keep the <html> class + persisted preference in sync with the toggle.
+  $effect(() => {
+    applyTheme(dark);
+    storeTheme(dark);
+  });
+
+  function setDark(v) {
+    dark = v;
+  }
 
   const notebook = $derived(notebooks.find((n) => n.id === selectedNotebookId) ?? null);
 
@@ -123,11 +137,16 @@
       const count = await getPageCount(pdfId);
       const nb = await api.createNotebook(name.replace(/\.pdf$/i, ''), null);
       const initial = await api.listPages(nb.id);
-      if (initial.length) await api.deletePage(initial[0].id);
+      const blankId = initial.length ? initial[0].id : null;
+      // Create the PDF pages BEFORE removing the initial blank page: deleting a
+      // page cleans up orphaned PDFs, and the upload is orphaned until a page
+      // references it — deleting the blank page first would wipe the PDF and
+      // make the next createPage fail its foreign key.
       for (let i = 0; i < count; i++) {
         const { w, h } = await getPageSize(pdfId, i + 1);
         await api.createPage(nb.id, { background: 'pdf', pdfId, pdfPage: i, width: w, height: h });
       }
+      if (blankId !== null) await api.deletePage(blankId);
       await refresh();
       await selectNotebook(nb.id);
     } catch (err) {
@@ -193,6 +212,8 @@
         onPagesChanged={refreshPages}
         onPagePatch={patchPage}
         onToggleSidebar={() => (sidebarOpen = true)}
+        {dark}
+        onOpenSettings={() => (settingsOpen = true)}
       />
     {:else}
       <div class="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
@@ -214,6 +235,12 @@
           >
             {importing ? 'Importing…' : 'Import PDF'}
           </button>
+          <button
+            class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            onclick={() => (settingsOpen = true)}
+          >
+            Settings
+          </button>
         </div>
       </div>
     {/if}
@@ -229,5 +256,9 @@
       onSaved={onModalSaved}
       onDeleted={onModalDeleted}
     />
+  {/if}
+
+  {#if settingsOpen}
+    <Settings {dark} onDarkChange={setDark} onClose={() => (settingsOpen = false)} />
   {/if}
 </div>

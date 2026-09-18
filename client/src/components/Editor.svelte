@@ -15,6 +15,8 @@
     onPagesChanged,
     onPagePatch,
     onToggleSidebar,
+    onOpenSettings,
+    dark = false,
     register,
   } = $props();
 
@@ -45,6 +47,10 @@
     chevronRight: ['m9 18 6-6-6-6'],
     grid: ['M3 3h7v7H3z', 'M14 3h7v7h-7z', 'M14 14h7v7h-7z', 'M3 14h7v7H3z'],
     menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
+    gear: [
+      'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z',
+      'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+    ],
   };
 
   const TOOLS = [
@@ -281,6 +287,9 @@
           {exporting ? 'Exporting…' : 'Export PDF'}
         </button>
       {/if}
+      <button class="rounded p-1.5 text-stone-600 hover:bg-stone-100" title="Settings" aria-label="Settings" onclick={onOpenSettings}>
+        <Icon d={I.gear} size={18} />
+      </button>
     </div>
 
     <div class="min-h-0 flex-1">
@@ -291,6 +300,7 @@
           tool={tool}
           color={color}
           size={size}
+          {dark}
           onContentChange={onContentChange}
           onZoomChange={setZoomPct}
         />

@@ -3,7 +3,7 @@
   import { drawStroke, drawTextItem, backgroundCanvas, strokeNear, uid } from '../lib/engine/ink.js';
   import { renderPdfPage } from '../lib/pdf.js';
 
-  let { page, tool = 'pen', color = '#1f2937', size = 3, onContentChange, onZoomChange, register } = $props();
+  let { page, tool = 'pen', color = '#1f2937', size = 3, dark = false, onContentChange, onZoomChange, register } = $props();
 
   let containerEl = $state(null);
   let canvasEl = $state(null);
@@ -93,6 +93,12 @@
     requestDraw();
   });
 
+  // Redraw the surrounding background when the light/dark theme changes.
+  $effect(() => {
+    void dark;
+    requestDraw();
+  });
+
   function ensureContentCanvas() {
     const w = Math.max(1, Math.round(page.width * RES));
     const h = Math.max(1, Math.round(page.height * RES));
@@ -141,7 +147,8 @@
     const H = canvasEl.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#e9e6df';
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--canvas-bg').trim() || '#e9e6df';
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
     const k = dpr * view.scale;
     ctx.setTransform(k, 0, 0, k, dpr * view.tx, dpr * view.ty);
@@ -176,7 +183,21 @@
     canvasEl.height = Math.round(h * dpr);
     canvasEl.style.width = w + 'px';
     canvasEl.style.height = h + 'px';
+    clampView();
     requestDraw();
+  }
+
+  // Keep the page centered horizontally (no horizontal scrolling) and clamp the
+  // vertical offset so the page can be scrolled up/down but never lost off-screen.
+  function clampView() {
+    if (!containerEl || !page) return;
+    const vw = containerEl.clientWidth;
+    const vh = containerEl.clientHeight;
+    const scale = view.scale;
+    const pageH = page.height * scale;
+    const tx = (vw - page.width * scale) / 2;
+    const ty = pageH <= vh ? (vh - pageH) / 2 : Math.min(0, Math.max(vh - pageH, view.ty));
+    view = { scale, tx, ty };
   }
 
   function fitView() {
@@ -187,11 +208,8 @@
       (containerEl.clientHeight - pad * 2) / page.height
     );
     const scale = Math.max(0.05, Math.min(s, 6));
-    view = {
-      scale,
-      tx: (containerEl.clientWidth - page.width * scale) / 2,
-      ty: (containerEl.clientHeight - page.height * scale) / 2,
-    };
+    view = { scale, tx: 0, ty: 0 };
+    clampView();
     notifyZoom();
     requestDraw();
   }
@@ -214,9 +232,10 @@
     const s0 = view.scale;
     const s1 = Math.max(0.05, Math.min(8, s0 * factor));
     if (s1 === s0) return;
-    const px = (cx - view.tx) / s0;
+    // Anchor the point under the cursor vertically; horizontal is re-centered.
     const py = (cy - view.ty) / s0;
-    view = { scale: s1, tx: cx - px * s1, ty: cy - py * s1 };
+    view = { scale: s1, tx: view.tx, ty: cy - py * s1 };
+    clampView();
     notifyZoom();
     requestDraw();
   }
@@ -256,6 +275,10 @@
       gesture = { type: 'pan', startX: e.clientX, startY: e.clientY, view0: { ...view } };
       canvasEl.classList.add('panning');
     } else if (tool === 'text') {
+      // Cancel the pointerdown so the browser doesn't fire the compatibility
+      // mousedown event — its default action would steal focus from the
+      // freshly-focused text overlay and immediately blur (commit) it.
+      e.preventDefault();
       startTextEdit(p.x, p.y);
     } else if (tool === 'eraser') {
       gesture = { type: 'erase' };
@@ -283,19 +306,17 @@
       const mid1 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const v0 = gesture.view0;
       const s1 = Math.max(0.05, Math.min(8, v0.scale * (d1 / gesture.d0)));
-      const px = (gesture.mid0.x - v0.tx) / v0.scale;
       const py = (gesture.mid0.y - v0.ty) / v0.scale;
-      view = { scale: s1, tx: mid1.x - px * s1, ty: mid1.y - py * s1 };
+      view = { scale: s1, tx: v0.tx, ty: mid1.y - py * s1 };
+      clampView();
       notifyZoom();
       requestDraw();
       return;
     }
     if (gesture?.type === 'pan') {
-      view = {
-        scale: view.scale,
-        tx: gesture.view0.tx + (e.clientX - gesture.startX),
-        ty: gesture.view0.ty + (e.clientY - gesture.startY),
-      };
+      // Vertical pan only — the page stays centered horizontally.
+      view = { scale: view.scale, tx: view.tx, ty: gesture.view0.ty + (e.clientY - gesture.startY) };
+      clampView();
       requestDraw();
       return;
     }
@@ -356,7 +377,9 @@
     if (e.ctrlKey || e.metaKey) {
       zoomAt(Math.exp(-e.deltaY * 0.01), cx, cy);
     } else {
-      view = { ...view, tx: view.tx - e.deltaX, ty: view.ty - e.deltaY };
+      // Vertical scroll only — horizontal delta is ignored.
+      view = { ...view, ty: view.ty - e.deltaY };
+      clampView();
       requestDraw();
     }
   }
