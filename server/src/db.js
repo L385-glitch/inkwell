@@ -140,6 +140,9 @@ export function notebookToJson(row) {
   const pageCount = db
     .prepare('SELECT COUNT(*) AS c FROM pages WHERE notebook_id = ?')
     .get(row.id).c;
+  const first = db
+    .prepare('SELECT background, pdf_id, pdf_page FROM pages WHERE notebook_id = ? ORDER BY idx, id LIMIT 1')
+    .get(row.id);
   return {
     id: row.id,
     title: row.title,
@@ -147,6 +150,9 @@ export function notebookToJson(row) {
     color: row.color,
     tags,
     pageCount,
+    firstBackground: first ? first.background : 'blank',
+    firstPdfId: first && first.pdf_id != null ? first.pdf_id : null,
+    firstPdfPage: first && first.pdf_page != null ? first.pdf_page : 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

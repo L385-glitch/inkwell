@@ -1,9 +1,9 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { drawStroke, drawTextItem, backgroundCanvas, strokeNear, uid } from '../lib/engine/ink.js';
+  import { drawStroke, drawTextItem, backgroundCanvas, strokeNear, textBounds, textAt, eraseBrush, uid } from '../lib/engine/ink.js';
   import { renderPdfPage } from '../lib/pdf.js';
 
-  let { page, tool = 'pen', color = '#1f2937', size = 3, dark = false, onContentChange, onZoomChange, register } = $props();
+  let { page, tool = 'pen', color = '#1f2937', size = 3, eraserMode = 'brush', dark = false, onContentChange, onZoomChange, register } = $props();
 
   let containerEl = $state(null);
   let canvasEl = $state(null);
@@ -15,6 +15,7 @@
   let texts = $state([]);
   let live = null;
   let editing = $state(null);
+  let selected = $state(null);
   let eraserPos = null;
 
   let view = $state({ scale: 1, tx: 0, ty: 0 });
@@ -42,6 +43,7 @@
       texts = [];
       live = null;
       editing = null;
+      selected = null;
       eraserPos = null;
       pdfCanvas = null;
       currentPageId = null;
@@ -58,6 +60,7 @@
     texts = (p.content?.texts ?? []).map((t) => ({ ...t, id: t.id ?? uid() }));
     live = null;
     editing = null;
+    selected = null;
     eraserPos = null;
     pdfCanvas = null;
     undoStack.length = 0;
@@ -99,6 +102,14 @@
     requestDraw();
   });
 
+  // Leaving the text tool clears any selection and commits a pending edit.
+  $effect(() => {
+    if (tool !== 'text') {
+      selected = null;
+      if (editing) commitEdit();
+    }
+  });
+
   function ensureContentCanvas() {
     const w = Math.max(1, Math.round(page.width * RES));
     const h = Math.max(1, Math.round(page.height * RES));
@@ -128,7 +139,7 @@
       );
     }
     for (const s of strokes) drawStroke(ctx, s);
-    for (const t of texts) drawTextItem(ctx, t);
+    for (const t of texts) if (editing?.id !== t.id) drawTextItem(ctx, t);
   }
 
   function requestDraw() {
@@ -279,7 +290,28 @@
       // mousedown event — its default action would steal focus from the
       // freshly-focused text overlay and immediately blur (commit) it.
       e.preventDefault();
-      startTextEdit(p.x, p.y);
+      if (editing) commitEdit();
+      // Hit-test existing text (topmost = last in the array wins).
+      const hit = [...texts].reverse().find((t) => textAt(t, p.x, p.y));
+      if (hit) {
+        const b = textBounds(hit);
+        const hx = b.x + b.w;
+        const hy = b.y + b.h;
+        if (Math.hypot(p.x - hx, p.y - hy) < 14 / view.scale) {
+          // Bottom-right corner → resize (width + font size).
+          selected = hit.id;
+          gesture = { type: 'resize-text', id: hit.id, origW: hit.w || 320, origSize: hit.size, startPage: p, started: false };
+        } else {
+          // Body → select, and a potential drag-to-move.
+          selected = hit.id;
+          gesture = { type: 'maybe-move-text', id: hit.id, startX: e.clientX, startY: e.clientY, origX: hit.x, origY: hit.y };
+        }
+      } else if (selected) {
+        selected = null;
+        requestDraw();
+      } else {
+        startTextEdit(p.x, p.y);
+      }
     } else if (tool === 'eraser') {
       gesture = { type: 'erase' };
       eraserPos = p;
@@ -327,6 +359,38 @@
       requestDraw();
       return;
     }
+    if (gesture?.type === 'maybe-move-text' || gesture?.type === 'move-text') {
+      const dx = e.clientX - gesture.startX;
+      const dy = e.clientY - gesture.startY;
+      if (gesture.type === 'maybe-move-text') {
+        if (Math.hypot(dx, dy) < 3) return;
+        pushUndo();
+        gesture = { ...gesture, type: 'move-text' };
+      }
+      const t = texts.find((o) => o.id === gesture.id);
+      if (t) {
+        const nx = gesture.origX + dx / view.scale;
+        const ny = gesture.origY + dy / view.scale;
+        texts = texts.map((o) => (o.id === t.id ? { ...t, x: nx, y: ny } : o));
+        requestDraw();
+      }
+      return;
+    }
+    if (gesture?.type === 'resize-text') {
+      const t = texts.find((o) => o.id === gesture.id);
+      if (t) {
+        if (!gesture.started) {
+          pushUndo();
+          gesture = { ...gesture, started: true };
+        }
+        const p = toPage(e);
+        const w = Math.max(60, gesture.origW + (p.x - gesture.startPage.x));
+        const sz = Math.max(8, gesture.origSize + (p.y - gesture.startPage.y) * 0.25);
+        texts = texts.map((o) => (o.id === t.id ? { ...t, w, size: sz } : o));
+        requestDraw();
+      }
+      return;
+    }
     if (live) {
       const events = e.getCoalescedEvents?.() || [e];
       for (const ev of events) {
@@ -358,6 +422,17 @@
       }
       return;
     }
+    if (gesture?.type === 'move-text' || gesture?.type === 'resize-text') {
+      gesture = null;
+      scheduleSave(page?.id);
+      requestDraw();
+      return;
+    }
+    if (gesture?.type === 'maybe-move-text') {
+      // Plain click on the text body: keep it selected, no move occurred.
+      gesture = null;
+      return;
+    }
     if (live) {
       if (live.points.length > 0) {
         pushUndo();
@@ -386,13 +461,36 @@
 
   function eraseAt(x, y) {
     const r = 8 / view.scale + 4;
-    const keep = [];
-    const removed = [];
-    for (const s of strokes) (strokeNear(s, x, y, r) ? removed : keep).push(s);
-    if (!removed.length) return;
-    pushUndo();
-    strokes = keep;
+    if (eraserMode === 'line') {
+      // Whole-line: touching any part of a stroke erases the entire stroke.
+      const keep = [];
+      const removed = [];
+      for (const s of strokes) (strokeNear(s, x, y, r) ? removed : keep).push(s);
+      if (!removed.length) return;
+      pushUndo();
+      strokes = keep;
+    } else {
+      // Brush: erase only the points under the eraser, splitting strokes.
+      const before = strokes.reduce((n, s) => n + s.points.length, 0);
+      const next = eraseBrush(strokes, x, y, r);
+      const after = next.reduce((n, s) => n + s.points.length, 0);
+      if (after === before) return;
+      pushUndo();
+      strokes = next;
+    }
     scheduleSave(page?.id);
+  }
+
+  // Double-click an existing text item to edit its contents in place.
+  function onDoubleClick(e) {
+    if (tool !== 'text') return;
+    const p = toPage(e);
+    const hit = [...texts].reverse().find((t) => textAt(t, p.x, p.y));
+    if (!hit) return;
+    selected = hit.id;
+    editing = { ...hit };
+    requestDraw();
+    tick().then(() => textEl?.focus());
   }
 
   function startTextEdit(x, y) {
@@ -408,6 +506,7 @@
     pushUndo();
     texts = [...texts, t];
     editing = { ...t };
+    selected = t.id;
     requestDraw();
     tick().then(() => textEl?.focus());
   }
@@ -548,6 +647,20 @@
       ? `left:${editing.x * view.scale + view.tx}px;top:${editing.y * view.scale + view.ty}px;width:${editing.w * view.scale}px;height:${Math.max(48, editing.size * 2.7 * view.scale)}px;font-size:${editing.size * view.scale}px;line-height:${editing.size * 1.35 * view.scale}px;color:${editing.color};`
       : ''
   );
+
+  // Screen-space box of the selected text item (for the selection chrome).
+  const selectedBox = $derived.by(() => {
+    if (!selected || tool !== 'text' || editing) return null;
+    const t = texts.find((o) => o.id === selected);
+    if (!t) return null;
+    const b = textBounds(t);
+    return {
+      left: b.x * view.scale + view.tx,
+      top: b.y * view.scale + view.ty,
+      width: b.w * view.scale,
+      height: b.h * view.scale,
+    };
+  });
 </script>
 
 <div class="relative h-full w-full overflow-hidden" bind:this={containerEl}>
@@ -558,7 +671,16 @@
     onpointermove={onPointerMove}
     onpointerup={onPointerEnd}
     onpointercancel={onPointerEnd}
+    ondblclick={onDoubleClick}
   ></canvas>
+  {#if selectedBox}
+    <div
+      class="text-select-box"
+      style="left:{selectedBox.left}px;top:{selectedBox.top}px;width:{selectedBox.width}px;height:{selectedBox.height}px;"
+    >
+      <div class="text-handle-resize"></div>
+    </div>
+  {/if}
   {#if editing}
     <textarea
       class="text-edit-overlay"

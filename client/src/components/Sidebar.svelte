@@ -1,16 +1,15 @@
 <script>
   import { api } from '../lib/api.js';
+  import Icon from './Icon.svelte';
 
   let {
     folders = [],
-    notebooks = [],
     tags = [],
-    selectedNotebookId = null,
+    currentFolderId = null,
     activeTag = null,
-    onSelectNotebook,
+    onNavigateFolder,
     onNewNotebook,
     onNewFolder,
-    onOpenNotebookModal,
     onToggleTag,
     onSelectSearchResult,
     onClose,
@@ -19,6 +18,11 @@
   let query = $state('');
   let results = $state(null);
   let searchTimer = null;
+
+  const I = {
+    folder: ['M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z'],
+    files: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6'],
+  };
 
   $effect(() => {
     const q = query.trim();
@@ -36,32 +40,19 @@
     }, 300);
   });
 
-  const grouped = $derived.by(() => {
-    const byId = new Map(folders.map((f) => [f.id, f]));
-    const groups = new Map();
-    for (const nb of notebooks) {
-      const name = nb.folderId != null && byId.has(nb.folderId) ? byId.get(nb.folderId).name : 'No folder';
-      if (!groups.has(name)) groups.set(name, []);
-      groups.get(name).push(nb);
-    }
-    return [...groups.entries()];
-  });
+  const rootFolders = $derived(
+    folders.filter((f) => f.parentId == null).sort((a, b) => a.name.localeCompare(b.name))
+  );
 
-  function fmtDate(s) {
-    if (!s) return '';
-    const d = new Date(s);
-    const now = new Date();
-    if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  function countIn(folderId) {
+    return folders.filter((f) => f.parentId === folderId).length + 0;
   }
 </script>
 
 <aside class="flex h-full w-72 shrink-0 flex-col border-r border-stone-200 bg-white">
   <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4f7cff] text-sm font-bold text-white">I</div>
-    <h1 class="text-lg font-semibold tracking-tight">Inkwell</h1>
+    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4f7cff] text-sm font-bold text-white">M</div>
+    <h1 class="text-lg font-semibold tracking-tight">Mynotes</h1>
     <button class="ml-auto rounded p-1 text-stone-500 hover:bg-stone-100 md:hidden" onclick={onClose} aria-label="Close sidebar">✕</button>
   </div>
 
@@ -75,10 +66,10 @@
   </div>
 
   <div class="flex gap-2 px-3 pb-3">
-    <button class="flex-1 rounded-lg bg-[#4f7cff] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3d68e0]" onclick={() => onNewNotebook(null)}>
+    <button class="flex-1 rounded-lg bg-[#4f7cff] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3d68e0]" onclick={() => onNewNotebook(currentFolderId)}>
       + Notebook
     </button>
-    <button class="rounded-lg border border-stone-200 px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-50" onclick={() => onNewFolder(null)}>
+    <button class="rounded-lg border border-stone-200 px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-50" onclick={() => onNewFolder(currentFolderId)}>
       + Folder
     </button>
   </div>
@@ -112,45 +103,33 @@
         {/each}
       {/if}
     {:else}
-      {#if notebooks.length === 0}
-        <p class="px-2 pt-4 text-sm text-stone-400">No notebooks yet. Create one to get started.</p>
-      {/if}
-      {#each grouped as [folderName, items] (folderName)}
-        <div class="flex items-center justify-between px-2 pb-1 pt-3">
-          <p class="text-xs font-medium uppercase tracking-wide text-stone-400">{folderName}</p>
-          <button
-            class="text-xs text-stone-400 hover:text-stone-600"
-            title="New notebook in this folder"
-            onclick={() => onNewNotebook(folders.find((f) => f.name === folderName)?.id ?? null)}
-          >
-            +
-          </button>
-        </div>
-        {#each items as nb (nb.id)}
-          <div
-            class="group flex items-center gap-2 rounded-lg px-2 py-1.5 {nb.id === selectedNotebookId
-              ? 'bg-[#eef2ff]'
-              : 'hover:bg-stone-50'}"
-          >
-            <button class="flex min-w-0 flex-1 items-center gap-2 text-left" onclick={() => onSelectNotebook(nb.id)}>
-              <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:{nb.color}"></span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-medium text-stone-800">{nb.title}</span>
-                <span class="block truncate text-xs text-stone-400">
-                  {nb.pageCount} page{nb.pageCount === 1 ? '' : 's'} · {fmtDate(nb.updatedAt)}
-                </span>
-              </span>
-            </button>
-            <button
-              class="rounded p-1 text-stone-400 opacity-70 hover:bg-stone-200 md:opacity-0 md:group-hover:opacity-100"
-              title="Notebook settings"
-              onclick={() => onOpenNotebookModal(nb)}
-            >
-              ⋯
-            </button>
-          </div>
-        {/each}
+      <p class="px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-stone-400">Folders</p>
+      <button
+        class="mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left {currentFolderId == null
+          ? 'bg-[#eef2ff]'
+          : 'hover:bg-stone-50'}"
+        onclick={() => onNavigateFolder(null)}
+      >
+        <span class="text-stone-400"><Icon d={I.files} size={16} /></span>
+        <span class="text-sm font-medium text-stone-700">All files</span>
+      </button>
+      {#each rootFolders as f (f.id)}
+        <button
+          class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left {f.id === currentFolderId
+            ? 'bg-[#eef2ff]'
+            : 'hover:bg-stone-50'}"
+          onclick={() => onNavigateFolder(f.id)}
+        >
+          <span class="text-amber-500"><Icon d={I.folder} size={16} /></span>
+          <span class="min-w-0 flex-1 truncate text-sm font-medium text-stone-700">{f.name}</span>
+          {#if countIn(f.id)}
+            <span class="text-xs text-stone-400">{countIn(f.id)}</span>
+          {/if}
+        </button>
       {/each}
+      {#if rootFolders.length === 0}
+        <p class="px-2 pt-2 text-sm text-stone-400">No folders yet. Create one to organize your notes.</p>
+      {/if}
     {/if}
   </div>
 </aside>

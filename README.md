@@ -1,4 +1,4 @@
-# Inkwell
+# Mynotes
 
 A self-hosted **handwriting notes app** — the core of GoodNotes, running as a single
 Docker container on your TrueNAS Scale server and accessed through Tailscale.
@@ -27,7 +27,7 @@ export notebooks back to PDF.
 - Access control: **none built in** — the app trusts its network boundary. Keep it behind Tailscale; anyone who can reach the port can use it.
 
 ```
-Tailscale LAN ──► host port 3100 ──► inkwell container (Fastify + SQLite + static SPA)
+Tailscale LAN ──► host port 3100 ──► mynotes container (Fastify + SQLite + static SPA)
 ```
 
 ## Repository layout
@@ -65,8 +65,8 @@ served by the API at http://localhost:3100).
 
 ## Deployment on TrueNAS Scale
 
-Inkwell runs as a prebuilt Docker image from the **GitHub Container Registry**
-(`ghcr.io/l385-glitch/inkwell`). Every push to `main` is built automatically by
+Mynotes runs as a prebuilt Docker image from the **GitHub Container Registry**
+(`ghcr.io/l385-glitch/mynotes`). Every push to `main` is built automatically by
 GitHub Actions (`.github/workflows/docker.yml`) — nothing is built on the server.
 
 ### Option A: TrueNAS "Apps" (recommended)
@@ -75,7 +75,7 @@ Managed by the TrueNAS UI — you get the native **log viewer**,
 **start/stop/restart** buttons and one-click **updates**.
 
 1. TrueNAS UI: **Apps → Discover → ⋮ (three dots) → Install via YAML**.
-2. Set **App name** to `inkwell`.
+2. Set **App name** to `mynotes`.
 3. Paste the content of [`truenas.yaml`](truenas.yaml) into the YAML editor
    and click **Deploy**.
 
@@ -84,7 +84,7 @@ Managed by the TrueNAS UI — you get the native **log viewer**,
 1. Push your code changes to GitHub (`git push`).
 2. GitHub Actions builds and pushes the new image (a few minutes —
    watch it under the *Actions* tab of the repo).
-3. TrueNAS UI: **Apps → Installed → inkwell → ⋮ → Update**.
+3. TrueNAS UI: **Apps → Installed → mynotes → ⋮ → Update**.
 
 ### Option B: Docker CLI (alternative)
 
@@ -92,9 +92,9 @@ If you prefer managing the container from a shell:
 
 ```bash
 ssh luca@<truenas-tailscale-ip>
-sudo mkdir -p /var/docker/inkwell && sudo chown $USER /var/docker/inkwell
-git clone https://github.com/L385-glitch/inkwell.git /var/docker/inkwell
-cd /var/docker/inkwell
+sudo mkdir -p /var/docker/mynotes && sudo chown $USER /var/docker/mynotes
+git clone https://github.com/L385-glitch/mynotes.git /var/docker/mynotes
+cd /var/docker/mynotes
 docker compose up -d --build
 ```
 

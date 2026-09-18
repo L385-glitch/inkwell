@@ -110,3 +110,22 @@ body {
   border: none;
   z-index: 20;
 }
+
+/* Selection chrome for a text item. pointer-events stay off so the canvas
+   keeps receiving all pointer input (hit-testing is done in JS). */
+.text-select-box {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+  z-index: 15;
+}
+.text-handle-resize {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 13px;
+  height: 13px;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+}

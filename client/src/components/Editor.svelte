@@ -15,6 +15,7 @@
     onPagesChanged,
     onPagePatch,
     onToggleSidebar,
+    onBack,
     onOpenSettings,
     dark = false,
     register,
@@ -27,6 +28,7 @@
   let zoomPct = $state(100);
   let exporting = $state(false);
   let bgOpen = $state(false);
+  let eraserMode = $state('brush');
 
   function registerCanvas(api_) {
     canvasApi = api_;
@@ -47,6 +49,7 @@
     chevronRight: ['m9 18 6-6-6-6'],
     grid: ['M3 3h7v7H3z', 'M14 3h7v7h-7z', 'M14 14h7v7h-7z', 'M3 14h7v7H3z'],
     menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
+    line: ['M4 20 20 4', 'M4 4h4v4', 'M20 20h-4v-4'],
     gear: [
       'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z',
       'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
@@ -158,9 +161,9 @@
   }
 </script>
 
-<div class="flex h-full min-h-0 flex-1">
-  <!-- left tool rail -->
-  <div class="flex shrink-0 flex-col items-center gap-1 border-r border-stone-200 bg-white px-1 py-2" style="width:3.4rem">
+<div class="flex h-full min-h-0 flex-1 flex-col">
+  <!-- horizontal toolbar on top of the sheet -->
+  <div class="flex shrink-0 flex-wrap items-center gap-x-1 gap-y-1.5 border-b border-stone-200 bg-white px-2 py-1.5 sm:px-3 order-2">
     {#each TOOLS as t (t.id)}
       <button
         class="rounded-lg p-2 {tool === t.id ? 'bg-[#eef2ff] text-[#4f7cff]' : 'text-stone-600 hover:bg-stone-100'}"
@@ -171,9 +174,16 @@
       </button>
     {/each}
 
-    <div class="my-1 h-px w-8 bg-stone-200"></div>
+    {#if tool === 'eraser'}
+      <div class="flex items-center rounded-lg bg-stone-100 p-0.5">
+        <button class="rounded px-2 py-1 text-xs font-medium {eraserMode === 'brush' ? 'bg-white text-[#4f7cff] shadow-sm' : 'text-stone-500'}" onclick={() => (eraserMode = 'brush')}>Brush</button>
+        <button class="rounded px-2 py-1 text-xs font-medium {eraserMode === 'line' ? 'bg-white text-[#4f7cff] shadow-sm' : 'text-stone-500'}" onclick={() => (eraserMode = 'line')}>Line</button>
+      </div>
+    {/if}
 
-    <div class="grid grid-cols-2 gap-1.5">
+    <div class="mx-1 h-6 w-px bg-stone-200"></div>
+
+    <div class="flex items-center gap-1.5">
       {#each palette as c (c)}
         <button
           class="h-5 w-5 rounded-full border {c === color
@@ -186,7 +196,7 @@
       {/each}
     </div>
 
-    <div class="my-1 h-px w-8 bg-stone-200"></div>
+    <div class="mx-1 h-6 w-px bg-stone-200"></div>
 
     {#each SIZES as s (s.v)}
       <button
@@ -198,7 +208,7 @@
       </button>
     {/each}
 
-    <div class="my-1 h-px w-8 bg-stone-200"></div>
+    <div class="mx-1 h-6 w-px bg-stone-200"></div>
 
     <button class="rounded-lg p-2 text-stone-600 hover:bg-stone-100" title="Undo (Ctrl+Z)" onclick={() => canvasApi?.undo()}>
       <Icon d={I.undo} />
@@ -207,7 +217,7 @@
       <Icon d={I.redo} />
     </button>
 
-    <div class="my-1 h-px w-8 bg-stone-200"></div>
+    <div class="mx-1 h-6 w-px bg-stone-200"></div>
 
     <button class="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" title="Zoom out" onclick={() => canvasApi?.zoomOut()}>−</button>
     <button class="min-w-10 rounded-lg px-1 py-0.5 text-center text-xs text-stone-600 hover:bg-stone-100" title="Fit to screen" onclick={() => canvasApi?.fitView()}>
@@ -215,7 +225,7 @@
     </button>
     <button class="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" title="Zoom in" onclick={() => canvasApi?.zoomIn()}>+</button>
 
-    <div class="relative my-1 h-px w-8 bg-stone-200"></div>
+    <div class="mx-1 h-6 w-px bg-stone-200"></div>
 
     <div class="relative">
       <button
@@ -227,7 +237,7 @@
         <Icon d={I.grid} />
       </button>
       {#if bgOpen}
-        <div class="absolute left-full top-0 z-30 ml-1 w-28 rounded-lg border border-stone-200 bg-white p-1 shadow-lg">
+        <div class="absolute left-0 top-full z-30 mt-1 w-28 rounded-lg border border-stone-200 bg-white p-1 shadow-lg">
           {#each BGS as bg (bg.id)}
             <button
               class="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-50 {page?.background === bg.id ? 'font-semibold text-[#4f7cff]' : 'text-stone-700'}"
@@ -241,12 +251,20 @@
     </div>
   </div>
 
-  <!-- main column -->
-  <div class="flex min-w-0 flex-1 flex-col">
-    <div class="flex h-12 shrink-0 items-center gap-1 border-b border-stone-200 bg-white px-2 sm:px-3">
+  <!-- top bar -->
+  <div class="flex h-12 shrink-0 items-center gap-1 border-b border-stone-200 bg-white px-2 sm:px-3 order-1">
       <button class="rounded p-1.5 text-stone-500 hover:bg-stone-100 md:hidden" onclick={onToggleSidebar} aria-label="Menu">
         <Icon d={I.menu} />
       </button>
+      <button
+        class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100"
+        title="Back to folders"
+        onclick={onBack}
+      >
+        <Icon d={I.chevronLeft} size={16} />
+        <span class="hidden sm:inline">Folders</span>
+      </button>
+      <div class="h-5 w-px bg-stone-200"></div>
       <div class="flex min-w-0 items-center gap-2">
         <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:{notebook.color}"></span>
         <h2 class="truncate text-sm font-semibold">{notebook.title}</h2>
@@ -292,7 +310,7 @@
       </button>
     </div>
 
-    <div class="min-h-0 flex-1">
+    <div class="min-h-0 flex-1 order-3">
       {#if page}
         <Canvas
           register={registerCanvas}
@@ -300,6 +318,7 @@
           tool={tool}
           color={color}
           size={size}
+          eraserMode={eraserMode}
           {dark}
           onContentChange={onContentChange}
           onZoomChange={setZoomPct}
@@ -308,5 +327,4 @@
         <div class="flex h-full items-center justify-center text-sm text-stone-400">No page selected</div>
       {/if}
     </div>
-  </div>
 </div>

@@ -9,6 +9,29 @@ export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
+const FONT = '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+let measureCtx;
+function mctx() {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  return measureCtx;
+}
+
+// Bounding box of a text item in page coordinates (used for hit-testing and
+// drawing the selection/resize handles).
+export function textBounds(t) {
+  const ctx = mctx();
+  ctx.font = `${t.size}px ${FONT}`;
+  const lines = wrapText(ctx, t.text || '', t.w || 320);
+  const h = Math.max(t.size * 1.35, lines.length * t.size * 1.35);
+  return { x: t.x, y: t.y, w: t.w || 320, h };
+}
+
+export function textAt(t, x, y) {
+  const b = textBounds(t);
+  const pad = 6;
+  return x >= b.x - pad && x <= b.x + b.w + pad && y >= b.y - pad && y <= b.y + b.h + pad;
+}
+
 export function drawStroke(ctx, s, fast = false) {
   const pts = s.points;
   if (!pts || pts.length === 0) return;
@@ -84,7 +107,7 @@ export function drawTextItem(ctx, t) {
   if (!t.text) return;
   ctx.save();
   ctx.fillStyle = t.color;
-  ctx.font = `${t.size}px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif`;
+  ctx.font = `${t.size}px ${FONT}`;
   ctx.textBaseline = 'top';
   const lines = wrapText(ctx, t.text, t.w || 320);
   let y = t.y;
@@ -211,4 +234,29 @@ function distToSeg(px, py, a, b) {
   let t = ((px - a[0]) * dx + (py - a[1]) * dy) / l2;
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
+
+// Brush erase: remove the points near (x,y) from every stroke, splitting a
+// stroke into separate segments wherever points were removed. Returns a new
+// array (unchanged strokes keep their identity so the caller can detect no-ops).
+export function eraseBrush(strokes, x, y, r) {
+  const r2 = r * r;
+  const out = [];
+  for (const s of strokes) {
+    const pts = s.points;
+    if (!pts || !pts.length) continue;
+    let seg = [];
+    const flush = () => {
+      if (seg.length >= 2) out.push({ ...s, id: uid(), points: seg });
+      seg = [];
+    };
+    for (const p of pts) {
+      const dx = p[0] - x;
+      const dy = p[1] - y;
+      if (dx * dx + dy * dy <= r2) flush();
+      else seg.push(p);
+    }
+    flush();
+  }
+  return out;
 }

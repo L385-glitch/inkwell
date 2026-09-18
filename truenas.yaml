@@ -1,8 +1,8 @@
-# Inkwell for TrueNAS Scale "Apps" (Add -> Install via YAML)
+# Mynotes for TrueNAS Scale "Apps" (Add -> Install via YAML)
 #
 # One-time setup:
 #   1. TrueNAS UI: Apps -> Discover -> (three dots) -> Install via YAML
-#   2. App name: inkwell
+#   2. App name: mynotes
 #   3. Paste everything below into the YAML editor, click Deploy
 #
 # Updating (important):
@@ -15,22 +15,22 @@
 #   To update to a new version:
 #     a) I (the assistant) send you a new image tag (a long hash).
 #     b) Replace the tag on the "image:" line below with it.
-#     c) In TrueNAS: Apps -> inkwell -> (three dots) -> Update
+#     c) In TrueNAS: Apps -> mynotes -> (three dots) -> Update
 #        (or delete it WITH "remove images", then Install via YAML again).
 #     d) Hard-refresh the app page in your browser (Ctrl+Shift+R) - the
 #        browser otherwise keeps showing the old interface.
 #
 # NOTE: the GHCR package must stay PUBLIC (TrueNAS pulls it anonymously -
 # this YAML format has no place for registry credentials). If it ever gets
-# set back to private, re-open https://github.com/packages/container/inkwell
+# set back to private, re-open https://github.com/packages/container/mynotes
 # and set visibility to Public.
 services:
-  inkwell:
-    image: ghcr.io/l385-glitch/inkwell:12c2af63580c829a438120a36ae79680ee830a98
+  mynotes:
+    image: ghcr.io/l385-glitch/mynotes:12c2af63580c829a438120a36ae79680ee830a98
     ports:
       - "3100:3100"
     environment:
       - TZ=Europe/Vienna
     volumes:
-      - /mnt/pool1/Apps/inkwell/data:/data
+      - /mnt/pool1/Apps/mynotes/data:/data
     restart: unless-stopped

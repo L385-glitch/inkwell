@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Editor from './components/Editor.svelte';
+  import FileExplorer from './components/FileExplorer.svelte';
   import NotebookModal from './components/NotebookModal.svelte';
   import Settings from './components/Settings.svelte';
   import { api } from './lib/api.js';
@@ -12,6 +13,8 @@
   let notebooks = $state([]);
   let tags = $state([]);
   let selectedNotebookId = $state(null);
+  let currentFolderId = $state(null);
+  let returnFolderId = $state(null);
   let pages = $state([]);
   let page = $state(null);
   let activeTag = $state(null);
@@ -48,6 +51,27 @@
     tags = t;
   }
 
+  // Navigate the file explorer to a folder (null = root), closing any open notebook.
+  async function navigateFolder(id) {
+    currentFolderId = id;
+    if (selectedNotebookId != null) {
+      await editorApi?.flush?.();
+      selectedNotebookId = null;
+      pages = [];
+      page = null;
+    }
+    sidebarOpen = false;
+  }
+
+  // Leave the editor and return to the folder the notebook lives in.
+  async function backToFolders() {
+    await editorApi?.flush?.();
+    selectedNotebookId = null;
+    pages = [];
+    page = null;
+    currentFolderId = returnFolderId ?? null;
+  }
+
   async function selectNotebook(id, targetPageId = null) {
     if (id === selectedNotebookId) {
       if (targetPageId) openPage(targetPageId);
@@ -64,6 +88,8 @@
     pages = ps;
     const target = targetPageId ? ps.find((p) => p.id === targetPageId) : ps[0];
     if (target) openPage(target.id, tok);
+    const nb = notebooks.find((n) => n.id === id);
+    returnFolderId = nb ? nb.folderId : null;
   }
 
   async function openPage(id, tok = navToken) {
@@ -135,7 +161,7 @@
     try {
       const { id: pdfId, name } = await api.uploadPdf(file);
       const count = await getPageCount(pdfId);
-      const nb = await api.createNotebook(name.replace(/\.pdf$/i, ''), null);
+      const nb = await api.createNotebook(name.replace(/\.pdf$/i, ''), currentFolderId);
       const initial = await api.listPages(nb.id);
       const blankId = initial.length ? initial[0].id : null;
       // Create the PDF pages BEFORE removing the initial blank page: deleting a
@@ -185,14 +211,12 @@
   <div class="z-30 h-full {sidebarOpen ? 'fixed inset-y-0 left-0 shadow-xl' : 'hidden md:block'}">
     <Sidebar
       {folders}
-      notebooks={activeTag ? notebooks.filter((n) => n.tags.includes(activeTag)) : notebooks}
       {tags}
-      selectedNotebookId={selectedNotebookId}
+      {currentFolderId}
       {activeTag}
-      onSelectNotebook={(id) => selectNotebook(id)}
+      onNavigateFolder={navigateFolder}
       onNewNotebook={newNotebook}
       onNewFolder={newFolder}
-      onOpenNotebookModal={(nb) => (modalNotebook = nb)}
       onToggleTag={toggleTag}
       onSelectSearchResult={selectSearchResult}
       onClose={() => (sidebarOpen = false)}
@@ -212,37 +236,26 @@
         onPagesChanged={refreshPages}
         onPagePatch={patchPage}
         onToggleSidebar={() => (sidebarOpen = true)}
+        onBack={backToFolders}
         {dark}
         onOpenSettings={() => (settingsOpen = true)}
       />
+    {:else if notebook}
+      <div class="flex flex-1 items-center justify-center text-sm text-stone-400">Loading…</div>
     {:else}
-      <div class="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-        <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#4f7cff] text-2xl font-bold text-white">I</div>
-        <div>
-          <h2 class="text-xl font-semibold">Inkwell</h2>
-          <p class="mx-auto mt-1 max-w-sm text-sm text-stone-500">
-            Your self-hosted handwriting notes. Write on paper or PDFs, organize with folders and tags, and export to PDF.
-          </p>
-        </div>
-        <div class="flex flex-wrap justify-center gap-3">
-          <button class="rounded-lg bg-[#4f7cff] px-4 py-2 text-sm font-medium text-white hover:bg-[#3d68e0]" onclick={() => newNotebook(null)}>
-            + New notebook
-          </button>
-          <button
-            class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
-            onclick={importPdf}
-            disabled={importing}
-          >
-            {importing ? 'Importing…' : 'Import PDF'}
-          </button>
-          <button
-            class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
-            onclick={() => (settingsOpen = true)}
-          >
-            Settings
-          </button>
-        </div>
-      </div>
+      <FileExplorer
+        {folders}
+        {notebooks}
+        {currentFolderId}
+        {activeTag}
+        onNavigateFolder={navigateFolder}
+        onOpenNotebook={(id) => selectNotebook(id)}
+        onNewNotebook={newNotebook}
+        onNewFolder={newFolder}
+        onImportPdf={importPdf}
+        onOpenSettings={() => (settingsOpen = true)}
+        onOpenNotebookModal={(nb) => (modalNotebook = nb)}
+      />
     {/if}
   </div>
 

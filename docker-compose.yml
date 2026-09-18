@@ -1,7 +1,7 @@
 services:
-  inkwell:
+  mynotes:
     build: .
-    container_name: inkwell
+    container_name: mynotes
     ports:
       # Reach via <truenas-tailscale-ip>:3100
       - "3100:3100"

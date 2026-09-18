@@ -1,4 +1,4 @@
-const KEY = 'inkwell-theme';
+const KEY = 'mynotes-theme';
 
 // Initial theme: stored preference wins; otherwise follow the OS setting.
 export function initialDark() {
