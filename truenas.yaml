@@ -26,7 +26,7 @@
 # and set visibility to Public.
 services:
   inkwell:
-    image: ghcr.io/l385-glitch/inkwell:cc1a1139ad988699fb9d9ae43dd4607fe3140caf
+    image: ghcr.io/l385-glitch/inkwell:12c2af63580c829a438120a36ae79680ee830a98
     ports:
       - "3100:3100"
     environment:
