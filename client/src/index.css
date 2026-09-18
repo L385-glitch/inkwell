@@ -23,6 +23,8 @@ body {
 .ink-canvas.tool-text { cursor: text; }
 .ink-canvas.tool-select { cursor: grab; }
 .ink-canvas.tool-select.panning { cursor: grabbing; }
+.ink-canvas.space-pan, .ink-canvas.space-pan.panning { cursor: grab; }
+.ink-canvas.space-pan.panning { cursor: grabbing; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #c9c5bd; border-radius: 4px; }

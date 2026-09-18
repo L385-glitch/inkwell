@@ -15,15 +15,20 @@
     onPagesChanged,
     onPagePatch,
     onToggleSidebar,
+    register,
   } = $props();
 
-  let canvasRef = $state(null);
+  let canvasApi = $state(null);
   let tool = $state('pen');
   let color = $state('#1f2937');
   let size = $state(3);
   let zoomPct = $state(100);
   let exporting = $state(false);
   let bgOpen = $state(false);
+
+  function registerCanvas(api_) {
+    canvasApi = api_;
+  }
 
   const I = {
     pen: ['M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'],
@@ -86,13 +91,24 @@
     if (i < pages.length - 1) switchPage(pages[i + 1].id);
   }
 
-  function switchPage(id) {
-    canvasRef?.flushSave?.();
+  async function switchPage(id) {
+    await flush();
     onOpenPage(id);
   }
 
+  // Persist the current page (text edit + pending autosave) before leaving it.
+  async function flush() {
+    canvasApi?.commitEdit?.();
+    await canvasApi?.flushSave?.();
+  }
+
+  // Expose flush to App so it can persist the page before switching notebooks.
+  $effect(() => {
+    register?.({ flush });
+  });
+
   async function addPage() {
-    const p = await api.createPage(notebook.id, { background: 'blank' });
+    const p = await api.createPage(notebook.id, { background: 'blank', afterId: page.id });
     await onPagesChanged();
     switchPage(p.id);
   }
@@ -104,6 +120,7 @@
     }
     if (!confirm('Delete this page?')) return;
     const i = pages.findIndex((p) => p.id === page.id);
+    await flush();
     await api.deletePage(page.id);
     await onPagesChanged();
     const next = pages[i - 1] ?? pages[i];
@@ -177,43 +194,45 @@
 
     <div class="my-1 h-px w-8 bg-stone-200"></div>
 
-    <button class="rounded-lg p-2 text-stone-600 hover:bg-stone-100" title="Undo (Ctrl+Z)" onclick={() => canvasRef?.undo()}>
+    <button class="rounded-lg p-2 text-stone-600 hover:bg-stone-100" title="Undo (Ctrl+Z)" onclick={() => canvasApi?.undo()}>
       <Icon d={I.undo} />
     </button>
-    <button class="rounded-lg p-2 text-stone-600 hover:bg-stone-100" title="Redo (Ctrl+Shift+Z)" onclick={() => canvasRef?.redo()}>
+    <button class="rounded-lg p-2 text-stone-600 hover:bg-stone-100" title="Redo (Ctrl+Shift+Z)" onclick={() => canvasApi?.redo()}>
       <Icon d={I.redo} />
     </button>
 
     <div class="my-1 h-px w-8 bg-stone-200"></div>
 
-    <button class="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" title="Zoom out" onclick={() => canvasRef?.zoomOut()}>−</button>
-    <button class="min-w-10 rounded-lg px-1 py-0.5 text-center text-xs text-stone-600 hover:bg-stone-100" title="Fit to screen" onclick={() => canvasRef?.fitView()}>
+    <button class="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" title="Zoom out" onclick={() => canvasApi?.zoomOut()}>−</button>
+    <button class="min-w-10 rounded-lg px-1 py-0.5 text-center text-xs text-stone-600 hover:bg-stone-100" title="Fit to screen" onclick={() => canvasApi?.fitView()}>
       {zoomPct}%
     </button>
-    <button class="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" title="Zoom in" onclick={() => canvasRef?.zoomIn()}>+</button>
+    <button class="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" title="Zoom in" onclick={() => canvasApi?.zoomIn()}>+</button>
 
     <div class="relative my-1 h-px w-8 bg-stone-200"></div>
 
-    <button
-      class="rounded-lg p-2 {bgOpen ? 'bg-[#eef2ff] text-[#4f7cff]' : 'text-stone-600 hover:bg-stone-100'}"
-      title="Page background"
-      onclick={() => (bgOpen = !bgOpen)}
-      disabled={page?.background === 'pdf'}
-    >
-      <Icon d={I.grid} />
-    </button>
-    {#if bgOpen}
-      <div class="absolute left-full top-[13.5rem] z-30 ml-1 w-28 rounded-lg border border-stone-200 bg-white p-1 shadow-lg">
-        {#each BGS as bg (bg.id)}
-          <button
-            class="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-50 {page?.background === bg.id ? 'font-semibold text-[#4f7cff]' : 'text-stone-700'}"
-            onclick={() => setBackground(bg.id)}
-          >
-            {bg.label}
-          </button>
-        {/each}
-      </div>
-    {/if}
+    <div class="relative">
+      <button
+        class="rounded-lg p-2 {bgOpen ? 'bg-[#eef2ff] text-[#4f7cff]' : 'text-stone-600 hover:bg-stone-100'}"
+        title="Page background"
+        onclick={() => (bgOpen = !bgOpen)}
+        disabled={page?.background === 'pdf'}
+      >
+        <Icon d={I.grid} />
+      </button>
+      {#if bgOpen}
+        <div class="absolute left-full top-0 z-30 ml-1 w-28 rounded-lg border border-stone-200 bg-white p-1 shadow-lg">
+          {#each BGS as bg (bg.id)}
+            <button
+              class="w-full rounded px-2 py-1 text-left text-sm hover:bg-stone-50 {page?.background === bg.id ? 'font-semibold text-[#4f7cff]' : 'text-stone-700'}"
+              onclick={() => setBackground(bg.id)}
+            >
+              {bg.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
   </div>
 
   <!-- main column -->
@@ -267,7 +286,7 @@
     <div class="min-h-0 flex-1">
       {#if page}
         <Canvas
-          bind:this={canvasRef}
+          register={registerCanvas}
           page={page}
           tool={tool}
           color={color}

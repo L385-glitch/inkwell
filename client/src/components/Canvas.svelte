@@ -1,9 +1,9 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { drawStroke, drawTextItem, drawBackground, strokeNear, uid } from '../lib/engine/ink.js';
+  import { drawStroke, drawTextItem, backgroundCanvas, strokeNear, uid } from '../lib/engine/ink.js';
   import { renderPdfPage } from '../lib/pdf.js';
 
-  let { page, tool = 'pen', color = '#1f2937', size = 3, onContentChange, onZoomChange } = $props();
+  let { page, tool = 'pen', color = '#1f2937', size = 3, onContentChange, onZoomChange, register } = $props();
 
   let containerEl = $state(null);
   let canvasEl = $state(null);
@@ -27,10 +27,33 @@
   let rafPending = false;
   const undoStack = [];
   const redoStack = [];
+  let currentPageId = null;
+  let lastFitKey = null;
+  let spaceDown = false;
+  let saveTimer = null;
+  let dirty = false;
 
   $effect(() => {
     const p = page;
-    if (!p) return;
+    if (!p) {
+      if (editing) commitEdit();
+      if (currentPageId != null) flushSave(currentPageId);
+      strokes = [];
+      texts = [];
+      live = null;
+      editing = null;
+      eraserPos = null;
+      pdfCanvas = null;
+      currentPageId = null;
+      return;
+    }
+    if (p.id === currentPageId) return;
+    // Page is changing: commit any pending text edit and save the OLD page's
+    // content to the OLD page id (strokes/texts still hold the old content
+    // until we reset them below).
+    if (editing) commitEdit();
+    if (currentPageId != null) flushSave(currentPageId);
+    currentPageId = p.id;
     strokes = (p.content?.strokes ?? []).map((s) => ({ ...s, id: s.id ?? uid() }));
     texts = (p.content?.texts ?? []).map((t) => ({ ...t, id: t.id ?? uid() }));
     live = null;
@@ -42,7 +65,13 @@
     ensureContentCanvas();
     renderContent();
     requestDraw();
-    fitView();
+    // Keep zoom/pan when the new page has the same size; only re-fit when the
+    // page size actually changes (e.g. A4 -> PDF page).
+    const key = `${p.width}x${p.height}`;
+    if (key !== lastFitKey) {
+      lastFitKey = key;
+      fitView();
+    }
     if (p.background === 'pdf' && p.pdfId != null) {
       renderPdfPage(p.pdfId, (p.pdfPage ?? 0) + 1, RES)
         .then((c) => {
@@ -84,7 +113,13 @@
       ctx.fillRect(0, 0, page.width, page.height);
       if (pdfCanvas) ctx.drawImage(pdfCanvas, 0, 0, page.width, page.height);
     } else {
-      drawBackground(ctx, page.background, page.width, page.height);
+      ctx.drawImage(
+        backgroundCanvas(page.background, page.width, page.height, RES),
+        0,
+        0,
+        page.width,
+        page.height
+      );
     }
     for (const s of strokes) drawStroke(ctx, s);
     for (const t of texts) drawTextItem(ctx, t);
@@ -118,7 +153,7 @@
     ctx.fillRect(0, 0, page.width, page.height);
     ctx.restore();
     if (contentCanvas) ctx.drawImage(contentCanvas, 0, 0, page.width, page.height);
-    if (live) drawStroke(ctx, live);
+    if (live) drawStroke(ctx, live, true);
     if (tool === 'eraser' && eraserPos) {
       ctx.save();
       ctx.strokeStyle = 'rgba(31,41,55,0.65)';
@@ -195,7 +230,9 @@
   }
 
   function onPointerDown(e) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const isMouse = e.pointerType === 'mouse';
+    if (isMouse && e.button !== 0 && e.button !== 1) return;
+    if (isMouse && e.button === 1) e.preventDefault();
     if (editing) commitEdit();
     canvasEl.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -204,6 +241,7 @@
         live = null;
         requestDraw();
       }
+      eraserPos = null;
       const [a, b] = [...pointers.values()];
       gesture = {
         type: 'pinch',
@@ -214,7 +252,7 @@
       return;
     }
     const p = toPage(e);
-    if (tool === 'select') {
+    if ((isMouse && e.button === 1) || spaceDown || tool === 'select') {
       gesture = { type: 'pan', startX: e.clientX, startY: e.clientY, view0: { ...view } };
       canvasEl.classList.add('panning');
     } else if (tool === 'text') {
@@ -282,7 +320,11 @@
 
   function onPointerEnd(e) {
     pointers.delete(e.pointerId);
-    if (gesture?.type === 'pinch' && pointers.size < 2) gesture = null;
+    if (gesture?.type === 'pinch' && pointers.size < 2) {
+      gesture = null;
+      eraserPos = null;
+      requestDraw();
+    }
     if (gesture?.type === 'pan') {
       gesture = null;
       canvasEl.classList.remove('panning');
@@ -299,7 +341,7 @@
       if (live.points.length > 0) {
         pushUndo();
         strokes = [...strokes, live];
-        scheduleSave();
+        scheduleSave(page?.id);
       }
       live = null;
       requestDraw();
@@ -327,7 +369,7 @@
     if (!removed.length) return;
     pushUndo();
     strokes = keep;
-    scheduleSave();
+    scheduleSave(page?.id);
   }
 
   function startTextEdit(x, y) {
@@ -357,7 +399,7 @@
       texts = texts.map((t) => (t.id === id ? { ...t, text } : t));
     }
     editing = null;
-    scheduleSave();
+    scheduleSave(page?.id);
   }
 
   function pushUndo() {
@@ -372,7 +414,7 @@
     const s = undoStack.pop();
     strokes = s.strokes;
     texts = s.texts;
-    scheduleSave();
+    scheduleSave(page?.id);
   }
 
   function redo() {
@@ -381,31 +423,52 @@
     const s = redoStack.pop();
     strokes = s.strokes;
     texts = s.texts;
-    scheduleSave();
+    scheduleSave(page?.id);
   }
 
-  let saveTimer = null;
-  let dirty = false;
-
-  function scheduleSave() {
-    dirty = true;
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(flushSave, 700);
-  }
-
-  function flushSave() {
+  function cancelSave() {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    if (!dirty || !page) return;
+  }
+
+  // Debounced autosave. The page id is captured at schedule time and re-checked
+  // at fire time so a save can never land on the wrong page after a switch.
+  function scheduleSave(pid) {
+    if (pid == null) return;
+    dirty = true;
+    if (saveTimer) clearTimeout(saveTimer);
+    const content = { strokes, texts };
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      dirty = false;
+      if (currentPageId !== pid) return; // page switched; flushSave already saved
+      onContentChange?.(pid, content);
+    }, 700);
+  }
+
+  // Immediate save of the current content (awaited by the caller before any
+  // page switch). Returns a promise so switches can be serialized.
+  function flushSave(pid = page?.id) {
+    cancelSave();
+    if (pid == null || !dirty) return Promise.resolve();
     dirty = false;
-    onContentChange?.(page.id, { strokes, texts });
+    return Promise.resolve(onContentChange?.(pid, { strokes, texts }));
   }
 
   function onKeyDown(e) {
     if (editing) {
       if (e.key === 'Escape') commitEdit();
+      return;
+    }
+    if (e.code === 'Space' && !e.repeat) {
+      const t = e.target;
+      if (t === document.body || t === canvasEl) {
+        spaceDown = true;
+        canvasEl.classList.add('space-pan');
+        e.preventDefault();
+      }
       return;
     }
     const mod = e.ctrlKey || e.metaKey;
@@ -419,6 +482,18 @@
     }
   }
 
+  function onKeyUp(e) {
+    if (e.code === 'Space') {
+      spaceDown = false;
+      canvasEl?.classList.remove('space-pan');
+    }
+  }
+
+  function onBlur() {
+    spaceDown = false;
+    canvasEl?.classList.remove('space-pan');
+  }
+
   onMount(() => {
     ready = true;
     resize();
@@ -426,12 +501,23 @@
     if (containerEl) ro.observe(containerEl);
     canvasEl.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       ro.disconnect();
       canvasEl?.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKeyDown);
-      if (saveTimer) clearTimeout(saveTimer);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      cancelSave();
+      if (dirty && currentPageId != null) flushSave(currentPageId);
     };
+  });
+
+  // Expose the imperative API to the parent (Svelte 5 components have no
+  // instance object, so bind:this can't be used for this).
+  $effect(() => {
+    register?.({ undo, redo, zoomIn, zoomOut, fitView, flushSave, commitEdit });
   });
 
   let editStyle = $derived(

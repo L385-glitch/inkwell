@@ -17,9 +17,15 @@
   let modalNotebook = $state(null);
   let sidebarOpen = $state(false);
   let importing = $state(false);
+  let editorApi = $state(null);
   let fileInput;
+  let navToken = 0;
 
   const notebook = $derived(notebooks.find((n) => n.id === selectedNotebookId) ?? null);
+
+  function registerEditor(api_) {
+    editorApi = api_;
+  }
 
   async function refresh() {
     const [f, n, t] = await Promise.all([api.listFolders(), api.listNotebooks(), api.listTags()]);
@@ -28,29 +34,44 @@
     tags = t;
   }
 
-  async function selectNotebook(id) {
-    if (id === selectedNotebookId) return;
+  async function selectNotebook(id, targetPageId = null) {
+    if (id === selectedNotebookId) {
+      if (targetPageId) openPage(targetPageId);
+      return;
+    }
+    const tok = ++navToken;
     selectedNotebookId = id;
     sidebarOpen = false;
+    // Persist the page we're leaving before its content is swapped out.
+    await editorApi?.flush?.();
     page = null;
-    pages = await api.listPages(id);
-    const first = pages[0];
-    if (first) await openPage(first.id);
+    const ps = await api.listPages(id);
+    if (tok !== navToken) return;
+    pages = ps;
+    const target = targetPageId ? ps.find((p) => p.id === targetPageId) : ps[0];
+    if (target) openPage(target.id, tok);
   }
 
-  async function openPage(id) {
+  async function openPage(id, tok = navToken) {
     const p = await api.getPage(id);
+    if (tok !== navToken) return;
     page = p;
     saveState = 'saved';
   }
 
   async function handleContentChange(pageId, content) {
+    if (page?.id !== pageId) {
+      // Stale save for a page we already left — persist it silently.
+      await api.savePage(pageId, { content }).catch(() => {});
+      return;
+    }
     saveState = 'saving';
     try {
       await api.savePage(pageId, { content });
-      saveState = 'saved';
+      if (page?.id === pageId) saveState = 'saved';
     } catch {
-      saveState = 'unsaved';
+      // e.g. the page was deleted meanwhile — don't stick "Unsaved" on the new page
+      if (page?.id === pageId) saveState = 'unsaved';
     }
   }
 
@@ -85,13 +106,7 @@
 
   function selectSearchResult(r) {
     if (!r.notebookId) return;
-    if (r.notebookId === selectedNotebookId) {
-      if (r.pageId) openPage(r.pageId);
-      return;
-    }
-    selectNotebook(r.notebookId).then(() => {
-      if (r.pageId) openPage(r.pageId);
-    });
+    selectNotebook(r.notebookId, r.pageId ?? null);
   }
 
   function importPdf() {
@@ -168,6 +183,7 @@
   <div class="flex min-w-0 flex-1 flex-col">
     {#if notebook && pages.length}
       <Editor
+        register={registerEditor}
         {notebook}
         {pages}
         {page}

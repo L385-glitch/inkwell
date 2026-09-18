@@ -103,8 +103,8 @@ export default function pages(app) {
     const dir = req.body?.dir === 'prev' ? -1 : 1;
     const sibling = db
       .prepare(
-        `SELECT * FROM pages WHERE notebook_id = ? AND idx ${dir > 0 ? '<' : '>'} ?
-         ORDER BY idx ${dir > 0 ? 'DESC' : 'ASC'} LIMIT 1`
+        `SELECT * FROM pages WHERE notebook_id = ? AND idx ${dir > 0 ? '>' : '<'} ?
+         ORDER BY idx ${dir > 0 ? 'ASC' : 'DESC'} LIMIT 1`
       )
       .get(page.notebook_id, page.idx);
     if (sibling) {

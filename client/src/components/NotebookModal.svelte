@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
 
   let { notebook, folders = [], onClose, onSaved, onDeleted } = $props();
@@ -7,6 +8,14 @@
   let folderId = $state(notebook.folderId ?? '');
   let tagsText = $state(notebook.tags.join(', '));
   let busy = $state(false);
+
+  onMount(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   async function save() {
     busy = true;

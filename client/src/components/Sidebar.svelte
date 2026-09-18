@@ -142,7 +142,7 @@
               </span>
             </button>
             <button
-              class="rounded p-1 text-stone-400 opacity-0 hover:bg-stone-200 group-hover:opacity-100"
+              class="rounded p-1 text-stone-400 opacity-70 hover:bg-stone-200 md:opacity-0 md:group-hover:opacity-100"
               title="Notebook settings"
               onclick={() => onOpenNotebookModal(nb)}
             >
